@@ -96,6 +96,15 @@ void SimpleEQAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 {
 	// Use this method as the place to do any pre-playback
 	// initialisation that you need..
+	// https://docs.juce.com/master/structdsp_1_1ProcessSpec.html
+	// timestamp: https://youtu.be/i_Iq4_Kd7Rc?t=2144
+	juce::dsp::ProcessSpec spec;
+
+	spec.maximumBlockSize = samplesPerBlock;
+	spec.numChannels = 1;
+	spec.sampleRate = sampleRate;
+	leftChain.prepare(spec);
+	rightChain.prepare(spec);
 }
 
 void SimpleEQAudioProcessor::releaseResources()
@@ -129,7 +138,7 @@ bool SimpleEQAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
 #endif
 }
 #endif
-
+// AudioBuffer: https://docs.juce.com/master/classAudioBuffer.html (A multi-channel buffer containing floating point audio samples)
 void SimpleEQAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
 	juce::ScopedNoDenormals noDenormals;
@@ -145,18 +154,27 @@ void SimpleEQAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 	for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
 		buffer.clear(i, 0, buffer.getNumSamples());
 
-	// This is the place where you'd normally do the guts of your plugin's
-	// audio processing...
-	// Make sure to reset the state if your inner loop is processing
-	// the samples and the outer loop is handling the channels.
-	// Alternatively, you can process the samples with the channels
-	// interleaved by keeping the same state.
-	for (int channel = 0; channel < totalNumInputChannels; ++channel)
-	{
-		auto* channelData = buffer.getWritePointer(channel);
+	// Process chain requires processing context to be passed to it in order for the audio to run through the links in the chain.
+	// To make a processing context, we need to suplly an AudioBlock instance.
+	// processBlock function called by the host, and it is given a buffer that can have any number of channels.
+	// so we need to extract the left and right channels from the buffer (typically 0 and 1 respectively)
+	// youtube timestamp: https://youtu.be/i_Iq4_Kd7Rc?t=2183
 
-		// ..do something to the data...
-	}
+	// AudioBlock<float> - Minimal and lightweight data-structure which contains a list of pointers to channels containing some kind of sample data.
+	// https://docs.juce.com/master/classdsp_1_1AudioBlock.html
+	juce::dsp::AudioBlock<float> block(buffer);
+	auto leftBlock = block.getSingleChannelBlock(0);
+	auto rightBlock = block.getSingleChannelBlock(1);
+
+
+	juce::dsp::ProcessContextReplacing<float> leftContext(leftBlock);
+	juce::dsp::ProcessContextReplacing<float> rightContext(rightBlock);
+
+	leftChain.process(leftContext);
+	rightChain.process(rightContext);
+
+
+
 }
 
 //==============================================================================
